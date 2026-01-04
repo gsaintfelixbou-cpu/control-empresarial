@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Control Empresarial – Inversiones, Ventas y Ganancias</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;margin:0;padding:20px}
+    h1,h2,h3{color:#222}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+    .card{background:#fff;padding:16px;border-radius:14px;box-shadow:0 6px 16px rgba(0,0,0,.08)}
+    input,select,button{width:100%;padding:10px;margin:6px 0;border-radius:8px;border:1px solid #ddd}
+    button{background:#111;color:#fff;border:none;cursor:pointer}
+    button.secondary{background:#4b5563}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
+    .kpi{font-size:22px;font-weight:bold}
+    .row{display:flex;gap:10px}
+  </style>
+</head>
+<body>
+
+<h1>📊 Sistema Web de Control Empresarial</h1>
+
+<div class="grid">
+  <div class="card">
+    <h2>🔐 Acceso</h2>
+    <input id="email" placeholder="Email" />
+    <input id="password" type="password" placeholder="Contraseña" />
+    <div class="row">
+      <button onclick="login()">Entrar</button>
+      <button class="secondary" onclick="register()">Registrar</button>
+    </div>
+    <p id="authStatus"></p>
+  </div>
+
+  <div class="card">
+    <h2>📦 Producto</h2>
+    <input id="p_nombre" placeholder="Nombre" />
+    <input id="p_costo" type="number" placeholder="Costo bruto" />
+    <input id="p_margen" type="number" placeholder="Margen %" />
+    <button onclick="addProducto()">Guardar</button>
+  </div>
+
+  <div class="card">
+    <h2>💸 Gasto</h2>
+    <select id="g_tipo">
+      <option>Salario</option><option>Electricidad</option><option>Transporte</option><option>Alquiler</option><option>Otros</option>
+    </select>
+    <input id="g_monto" type="number" placeholder="Monto" />
+    <button onclick="addGasto()">Guardar</button>
+  </div>
+
+  <div class="card">
+    <h2>🧾 Venta</h2>
+    <select id="v_producto"></select>
+    <input id="v_precio" type="number" placeholder="Precio venta" />
+    <input id="v_cantidad" type="number" placeholder="Cantidad" />
+    <button onclick="addVenta()">Registrar</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📈 Dashboard</h2>
+  <div class="grid">
+    <div><div>Total Gastos</div><div class="kpi" id="k_gastos">0</div></div>
+    <div><div>Total Ventas</div><div class="kpi" id="k_ventas">0</div></div>
+    <div><div>Ganancia Neta</div><div class="kpi" id="k_ganancia">0</div></div>
+  </div>
+  <button class="secondary" onclick="exportExcel()">Exportar Excel</button>
+</div>
+
+<div class="card">
+  <h3>Ventas recientes</h3>
+  <table>
+    <thead><tr><th>Producto</th><th>Precio</th><th>Cant.</th><th>Total</th></tr></thead>
+    <tbody id="ventasTable"></tbody>
+  </table>
+</div>
+
+<script>
+  const supabase = window.supabase.createClient(
+    'https://TU_PROYECTO.supabase.co',
+    'TU_PUBLIC_KEY'
+  );
+
+  async function register(){
+    const { error } = await supabase.auth.signUp({ email: email.value, password: password.value });
+    authStatus.innerText = error ? error.message : 'Registro correcto';
+  }
+
+  async function login(){
+    const { error } = await supabase.auth.signInWithPassword({ email: email.value, password: password.value });
+    authStatus.innerText = error ? error.message : 'Sesión iniciada';
+    loadAll();
+  }
+
+  async function addProducto(){
+    await supabase.from('productos').insert([{ nombre:p_nombre.value, costo_bruto:p_costo.value, margen:p_margen.value }]);
+    loadProductos();
+  }
+
+  async function addGasto(){
+    await supabase.from('gastos').insert([{ tipo:g_tipo.value, monto:g_monto.value }]);
+    loadDashboard();
+  }
+
+  async function addVenta(){
+    await supabase.from('ventas').insert([{ producto:v_producto.value, precio:v_precio.value, cantidad:v_cantidad.value }]);
+    loadDashboard(); loadVentas();
+  }
+
+  async function loadProductos(){
+    const { data } = await supabase.from('productos').select();
+    v_producto.innerHTML = (data||[]).map(p=>`<option value="${p.nombre}">${p.nombre}</option>`).join('');
+  }
+
+  async function loadDashboard(){
+    const g = await supabase.from('gastos').select('monto');
+    const v = await supabase.from('ventas').select('precio,cantidad');
+    const tg = (g.data||[]).reduce((s,x)=>s+Number(x.monto),0);
+    const tv = (v.data||[]).reduce((s,x)=>s+(Number(x.precio)*Number(x.cantidad)),0);
+    k_gastos.innerText = tg.toFixed(2);
+    k_ventas.innerText = tv.toFixed(2);
+    k_ganancia.innerText = (tv - tg).toFixed(2);
+  }
+
+  async function loadVentas(){
+    const { data } = await supabase.from('ventas').select();
+    ventasTable.innerHTML = (data||[]).map(x=>`<tr><td>${x.producto}</td><td>${x.precio}</td><td>${x.cantidad}</td><td>${(x.precio*x.cantidad).toFixed(2)}</td></tr>`).join('');
+  }
+
+  function exportExcel(){
+    const table = document.querySelector('table');
+    const wb = XLSX.utils.table_to_book(table, {sheet:"Ventas"});
+    XLSX.writeFile(wb, 'reporte_ventas.xlsx');
+  }
+
+  async function loadAll(){ await loadProductos(); await loadDashboard(); await loadVentas(); }
+</script>
+</body>
+</html>
